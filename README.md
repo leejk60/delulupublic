@@ -21,23 +21,53 @@ likeness). Don't use it to impersonate real people, and disclose that you're
 using an AI filter anywhere honesty about your appearance matters. You are
 responsible for complying with the platform rules and laws that apply to you.
 
-## Setup
+## Setup — macOS on Apple Silicon
 
-Requires Python 3.9–3.11 (insightface wheels are most reliable there).
+One-time prerequisites:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
+xcode-select --install                 # C compiler (insightface builds from source)
+brew install python@3.11               # 3.9–3.11 work best with insightface
+brew install --cask obs                # ships the virtual camera driver
+```
+
+Then open **OBS once** and click *Start Virtual Camera* a single time — macOS
+will ask you to approve the camera system extension in System Settings. After
+that, the virtual cam is available system-wide and you never need OBS running
+for delulucam to work.
+
+Install delulucam:
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-**Virtual camera driver** (one-time, system-wide):
+The stock `onnxruntime` wheel for Apple Silicon already includes the
+**CoreML** execution provider, and delulucam auto-selects it — inference runs
+on the Neural Engine/GPU where the ops allow, with CPU fallback. An M-series
+Mac handles 720p30 comfortably.
 
-- **Windows / macOS** — install [OBS Studio](https://obsproject.com); it ships
-  the virtual camera driver pyvirtualcam uses. On macOS, launch OBS once and
-  press *Start Virtual Camera* one time to register the extension.
+**Camera permission:** on first run macOS prompts that your terminal app
+(Terminal, iTerm2, or VS Code — whichever you launch from) wants camera
+access. Grant it, or OpenCV will silently deliver no frames. If you denied it
+once: System Settings → Privacy & Security → Camera.
+
+**Finding the OBSBOT:** run `python -m delulucam --list-cameras`. Note that
+Continuity Camera (your iPhone) often grabs index 0 on Macs, so the OBSBOT
+may be index 1 or 2. If OBSBOT Center holds the camera exclusively, quit it
+or use the second device the camera exposes.
+
+<details>
+<summary>Setup on Windows / Linux</summary>
+
+- **Windows** — install [OBS Studio](https://obsproject.com) once for the
+  virtual cam driver, then the same `pip install -r requirements.txt` in a
+  Python 3.9–3.11 venv (`.venv\Scripts\activate`).
 - **Linux** — `sudo apt install v4l2loopback-dkms`, then
   `sudo modprobe v4l2loopback devices=1 card_label=delulucam exclusive_caps=1`.
+</details>
 
 On first run the face-swap model (`inswapper_128.onnx`, ~530 MB with the
 detector models) is downloaded to `~/.delulucam/models` and checksum-verified.
@@ -81,11 +111,11 @@ feed.
 The swap runs comfortably in real time on a GPU and adequately on a modern
 CPU at 720p. Knobs, roughly in order of impact:
 
-1. **GPU inference** — NVIDIA: `pip uninstall onnxruntime && pip install
-   onnxruntime-gpu` (needs CUDA + cuDNN). Apple Silicon: `pip install
-   onnxruntime-silicon` for CoreML. Windows AMD/Intel: `pip install
-   onnxruntime-directml`. delulucam auto-picks the best available provider;
-   `--cpu` forces CPU.
+1. **Accelerated inference** — Apple Silicon: nothing to do, CoreML is in the
+   stock `onnxruntime` wheel and auto-selected (if a model runs oddly under
+   CoreML, `--cpu` is a clean baseline — M-series CPUs cope well). NVIDIA:
+   `pip uninstall onnxruntime && pip install onnxruntime-gpu` (needs CUDA +
+   cuDNN). Windows AMD/Intel: `pip install onnxruntime-directml`.
 2. `--det-size 320` — halves detection cost, fine for a single centered face.
 3. `--detect-every 2` (or 3) — reuses face positions between detections;
    big CPU win, slight lag on fast head movement.

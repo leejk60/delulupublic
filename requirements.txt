@@ -1,5 +1,6 @@
-# Core runtime. For NVIDIA GPUs, replace onnxruntime with onnxruntime-gpu
-# (see README "Performance"). numpy is pinned <2 for insightface 0.7.x.
+# Core runtime. Apple Silicon: this stock onnxruntime wheel already includes
+# the CoreML provider — nothing to swap. NVIDIA: replace onnxruntime with
+# onnxruntime-gpu (see README "Performance"). numpy pinned <2 for insightface.
 numpy<2
 opencv-python>=4.8
 insightface==0.7.3
