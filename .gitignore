@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# model weights are downloaded on first run, never committed
+models/
+*.onnx
+*.pth
+
+# your character sheets are yours — keep them out of the repo
+characters/*
+!characters/.gitkeep

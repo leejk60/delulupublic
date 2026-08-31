@@ -1,0 +1,4 @@
+# Optional --enhance support (GFPGAN). Heavy: pulls in torch.
+# basicsr (a GFPGAN dependency) breaks with torchvision >= 0.17, hence the pin.
+gfpgan>=1.3.8
+torchvision<0.17
