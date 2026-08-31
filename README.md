@@ -90,7 +90,12 @@ A character sheet works best with a clear, well-lit, mostly frontal face. If
 the sheet shows the character from several angles, delulucam detects all the
 views, keeps the ones matching the dominant identity, and **averages them
 into one identity** — multi-view sheets give a more stable swap than a single
-crop. One image file = one character; multiple files = switchable characters.
+crop. Grid-collage sheets (close-ups + full-body + detail crops) are handled:
+tiny faces in full-body tiles are excluded, and partial detail crops are
+down-weighted in favour of clean close-ups. On load, it prints exactly which
+views were used and how much each contributes, so you can see what your sheet
+gave it. One image file = one character; multiple files = switchable
+characters.
 
 ### Preview hotkeys
 

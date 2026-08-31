@@ -18,6 +18,12 @@ IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 # Cosine similarity above which two faces on one sheet count as the same character.
 SAME_CHARACTER_THRESHOLD = 0.35
 
+# Faces smaller than this (pixels tall) or detected less confidently than this
+# give noisy identity embeddings (e.g. tiny faces in full-body tiles, partial
+# detail crops) and are excluded from the identity average.
+MIN_VIEW_HEIGHT_PX = 80
+MIN_VIEW_DET_SCORE = 0.55
+
 
 @dataclass
 class Character:
@@ -47,14 +53,48 @@ def load_character(path: str, swapper) -> Character:
             f"clear, mostly-frontal face on the sheet"
         )
 
-    # Anchor on the largest face, then pull in other views of the same character.
-    anchor = faces[0]
-    views = [anchor]
-    for face in faces[1:]:
-        if _cosine(anchor.normed_embedding, face.normed_embedding) >= SAME_CHARACTER_THRESHOLD:
-            views.append(face)
+    # Drop tiny / low-confidence detections (full-body tiles, partial detail
+    # crops); if that leaves nothing, fall back to the largest face we have.
+    def _height(f):
+        return f.bbox[3] - f.bbox[1]
 
-    avg = np.mean([f.normed_embedding for f in views], axis=0)
+    def _quality(f):
+        # det_score squared: partial or awkward views score visibly lower and
+        # should be strongly discounted, size only mildly rewarded.
+        return float(np.sqrt(_height(f))) * float(f.det_score) ** 2
+
+    usable = [
+        f for f in faces
+        if _height(f) >= MIN_VIEW_HEIGHT_PX and f.det_score >= MIN_VIEW_DET_SCORE
+    ]
+    if not usable:
+        usable = faces[:1]
+
+    # Anchor on the best-quality usable face (not merely the largest — on many
+    # sheets the largest detection is a partial detail crop), then pull in the
+    # other views of the same character, weighted by quality so crisp close-ups
+    # dominate over small or partial views.
+    anchor = max(usable, key=_quality)
+    views, weights = [], []
+    for face in usable:
+        if face is anchor or (
+            _cosine(anchor.normed_embedding, face.normed_embedding)
+            >= SAME_CHARACTER_THRESHOLD
+        ):
+            views.append(face)
+            weights.append(_quality(face))
+
+    total_w = float(sum(weights))
+    for f, w in zip(views, weights):
+        x, y = int(f.bbox[0]), int(f.bbox[1])
+        print(
+            f"[character]   view at ({x},{y}) h={_height(f):.0f}px "
+            f"score={f.det_score:.2f} -> {100 * w / total_w:.0f}% of identity"
+        )
+
+    avg = np.average(
+        [f.normed_embedding for f in views], axis=0, weights=np.asarray(weights)
+    )
     # Face.normed_embedding is derived from .embedding, so storing the averaged
     # vector as .embedding yields a re-normalised average identity.
     ref_face = Face(embedding=avg.astype(np.float32))
