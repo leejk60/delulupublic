@@ -208,6 +208,28 @@ If OBSBOT Center or another app has the camera open exclusively, OpenCV may
 fail to grab it; close the other app or pick the second device index the
 camera exposes.
 
+## Uninstalling
+
+Nothing runs in the background — no daemons, login items, or services. When
+the app isn't running it does nothing, so "off" is just quitting it (`q`).
+
+To remove everything it put on your machine:
+
+```bash
+rm -rf ~/delulucam                 # the app, its venv, and your character sheets
+rm -rf ~/.delulucam                # downloaded face-swap models + portrait crops
+rm -rf ~/.insightface              # detector models cache
+# avatar mode, if you set it up:
+rm -rf ~/fasterliveportrait-mlx
+rm -rf ~/.cache/huggingface/hub/models--ivanfioravanti--FasterLivePortrait-MLX-weights
+```
+
+Optionally, in System Settings → Privacy & Security → Camera, revoke your
+terminal app's camera access. The Homebrew tools (`python@3.11`, `ffmpeg`,
+`uv`) and OBS are general-purpose — keep them unless nothing else uses them
+(`brew uninstall ffmpeg uv python@3.11 && brew uninstall --cask obs`;
+removing OBS also removes the virtual camera driver).
+
 ## How it works
 
 - **Detection/recognition**: InsightFace `buffalo_l` pack (downloads
