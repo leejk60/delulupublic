@@ -138,6 +138,62 @@ pip install -r requirements-enhance.txt
 python -m delulucam --enhance          # or toggle live with 'e'
 ```
 
+## Avatar mode — full hair + outfit (delulustream-style)
+
+Face mode swaps only the face region, so you keep your own hair and clothes.
+Sites like delulustream get the *whole* character — hair, outfit, background —
+because they don't composite onto your video at all: they animate the
+character's image with your motion (on cloud GPUs, hence their latency).
+Avatar mode does the same thing locally: it takes a portrait of your
+character straight from the sheet and drives it live with your head pose,
+expressions, blinks and lip movement via
+[LivePortrait](https://github.com/KwaiVGI/LivePortrait), running natively on
+Apple Silicon through the
+[MLX port of FasterLivePortrait](https://github.com/ivanfioravanti/fasterliveportrait-mlx).
+
+| | face mode (`python -m delulucam`) | avatar mode (`delulucam/avatar.py`) |
+|---|---|---|
+| face | character's | character's |
+| hair / outfit / background | **yours** | **character's, pixel-perfect from the sheet** |
+| body language | full — walk, gesture, hold things | talking-head — head, expressions, lips |
+| speed | fastest | real-time on M-series (use `--profile speed`/`turbo`) |
+
+### Avatar mode setup (Apple Silicon)
+
+```bash
+git clone https://github.com/ivanfioravanti/fasterliveportrait-mlx ~/fasterliveportrait-mlx
+cd ~/fasterliveportrait-mlx
+brew install ffmpeg uv
+uv sync
+uv pip install pyvirtualcam
+```
+
+Then run the bridge from inside that directory (MLX weights auto-download
+from Hugging Face on first run):
+
+```bash
+uv run python ~/path/to/delulupublic/delulucam/avatar.py ~/sheets/mycharacter.png
+```
+
+The bridge picks the best face on your sheet and crops a portrait around it
+(hair and shoulders included) — `--view 1` picks a different face,
+`--margins top,sides,bottom` tunes the crop, `--no-crop` uses the image
+as-is. **A dedicated waist-up portrait image of your character gives the best
+result** — worth generating one alongside your sheet. Output is letterboxed
+onto a 1280x720 frame with a blurred backdrop (`--canvas 1920x1080`, or
+`none` for the raw portrait size).
+
+Live keys: `q` quit, `m` mirror, and `r` — **recalibrate**: your pose at the
+first frame becomes the character's rest pose, so start (and re-`r`) while
+facing the camera with a neutral expression.
+
+Expectations, honestly: expressions, blinks, lip sync and head turns come
+through convincingly; the character's body itself stays in its portrait pose,
+so this is a talking-head webcam, not full-body motion capture. That's the
+trade for running 100% locally with your feed never leaving the Mac. Model
+weights (LivePortrait, InsightFace) are released for non-commercial research
+use — check upstream licenses before monetised streaming.
+
 ## OBSBOT tips
 
 OBSBOT cameras show up as normal UVC webcams — find yours with
