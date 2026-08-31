@@ -271,12 +271,26 @@ def main():
                                    fmt=PixelFormat.BGR)
         print(f"[avatar] streaming {out_w}x{out_h} to {vcam.device}")
 
-    idle = canvas.compose(portrait_bgr) if canvas else portrait_bgr
+    def fit(frame_bgr):
+        """Letterbox any frame to the fixed output size."""
+        if canvas is not None:
+            return canvas.compose(frame_bgr)
+        fh, fw = frame_bgr.shape[:2]
+        if (fw, fh) == (out_w, out_h):
+            return frame_bgr
+        scale = min(out_w / fw, out_h / fh)
+        tw, th = int(fw * scale), int(fh * scale)
+        boxed = np.zeros((out_h, out_w, 3), np.uint8)
+        ox, oy = (out_w - tw) // 2, (out_h - th) // 2
+        boxed[oy : oy + th, ox : ox + tw] = cv2.resize(frame_bgr, (tw, th))
+        return boxed
+
+    idle = fit(portrait_bgr)
     print("[avatar] running — look at the camera with a neutral face for the "
           "first frame (that pose becomes 'rest'); press r to recalibrate, "
-          "m to mirror, q to quit")
+          "s to drop out of character (real camera), m to mirror, q to quit")
 
-    first, mirror = True, args.mirror
+    first, mirror, in_character = True, args.mirror, True
     times = []
     try:
         while True:
@@ -287,20 +301,24 @@ def main():
             if mirror:
                 frame = cv2.flip(frame, 1)
 
-            t0 = time.perf_counter()
-            _, out_crop, out_org, _ = pipe.run(
-                frame, pipe.src_imgs[0], pipe.src_infos[0],
-                first_frame=first, realtime=True,
-            )
-            first = False
-            times.append(time.perf_counter() - t0)
-
-            if out_crop is None:
-                out = idle  # no face in the driving frame: hold the still portrait
+            if not in_character:
+                out = fit(frame)  # passthrough: the real you, stream stays live
+                first = True  # recalibrate rest pose when coming back
             else:
-                rgb = out_crop if args.no_paste_back else out_org
-                bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-                out = canvas.compose(bgr) if canvas else bgr
+                t0 = time.perf_counter()
+                _, out_crop, out_org, _ = pipe.run(
+                    frame, pipe.src_imgs[0], pipe.src_infos[0],
+                    first_frame=first, realtime=True,
+                )
+                first = False
+                times.append(time.perf_counter() - t0)
+
+                if out_crop is None:
+                    out = idle  # no face in the driving frame: hold the still portrait
+                else:
+                    rgb = out_crop if args.no_paste_back else out_org
+                    bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+                    out = fit(bgr)
 
             if vcam is not None:
                 vcam.send(out)
@@ -313,10 +331,15 @@ def main():
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 4)
                     cv2.putText(hud, f"{fps_now:4.1f} fps", (12, 28),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (80, 220, 120), 2)
-                cv2.imshow("delulucam avatar (q quit / r recalibrate / m mirror)", hud)
+                cv2.imshow(
+                    "delulucam avatar (q quit / s in-out of character / "
+                    "r recalibrate / m mirror)", hud)
                 key = cv2.waitKey(1) & 0xFF
                 if key in (ord("q"), 27):
                     break
+                elif key == ord("s"):
+                    in_character = not in_character
+                    print(f"[avatar] {'in character' if in_character else 'out of character (real camera)'}")
                 elif key == ord("r"):
                     first = True
                     print("[avatar] recalibrated rest pose")

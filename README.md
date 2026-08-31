@@ -183,9 +183,11 @@ result** — worth generating one alongside your sheet. Output is letterboxed
 onto a 1280x720 frame with a blurred backdrop (`--canvas 1920x1080`, or
 `none` for the raw portrait size).
 
-Live keys: `q` quit, `m` mirror, and `r` — **recalibrate**: your pose at the
-first frame becomes the character's rest pose, so start (and re-`r`) while
-facing the camera with a neutral expression.
+Live keys: `q` quit, `s` — **drop in/out of character** (the virtual cam
+switches to your real camera and back, stream stays live), `m` mirror, and
+`r` — **recalibrate**: your pose at the first frame becomes the character's
+rest pose, so start (and re-`r`) while facing the camera with a neutral
+expression.
 
 Expectations, honestly: expressions, blinks, lip sync and head turns come
 through convincingly; the character's body itself stays in its portrait pose,
