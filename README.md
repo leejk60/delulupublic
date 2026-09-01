@@ -227,21 +227,33 @@ python3 delulucam/web/serve.py     # serves on http://localhost:8420 and opens i
 (Plain `file://` often blocks camera access in the browser — serving over
 `localhost` sidesteps that.)
 
-**Feeding the output to your virtual camera**: run the page in your normal
-browser (Safari/Chrome), **not** inside OBS's Browser Source — OBS's Browser
+**Feeding the output to your virtual camera** — two ways:
+
+*Direct (recommended)* — `delulucam/web/vcam_bridge.py` spawns a real system
+virtual camera (the same `pyvirtualcam`/OBS Virtual Camera device used
+elsewhere in this project) and feeds it frames the browser page captures
+from its own output. No OBS needed at all — any app (Zoom, Meet, Discord,
+OBS included) can select the resulting camera directly, the same way you'd
+pick any other webcam.
+
+```bash
+python3 delulucam/web/vcam_bridge.py   # run alongside serve.py, in delulucam's venv
+```
+
+Then in the web page, once connected to Decart, check **"Feed output to a
+system virtual camera"** in the sidebar. The page streams JPEG frames to the
+bridge over a local WebSocket (`ws://localhost:8421`); the bridge decodes
+them and pushes them into the virtual camera, creating the device on first
+frame once it knows the real output resolution.
+
+*Fallback (OBS Window Capture)* — if you'd rather not run the extra bridge
+process, or you're already living in OBS anyway: open `http://localhost:8420`
+in your regular browser (**not** inside OBS's Browser Source — OBS's Browser
 Source runs its own embedded browser with separate permissions and reliably
-fails to get camera access, since it needs special launch flags that are
-finicky and version-dependent even when they work at all. Instead:
-
-1. Open `http://localhost:8420` in your regular browser and get it connected.
-2. In OBS: **Sources → + → Window Capture** (not Browser Source) → select
-   that browser window.
-3. Crop the source to just the output video area (OBS's crop handles, or a
-   filter) so the sidebar/controls aren't visible to viewers.
-4. **Start Virtual Camera**.
-
-This captures the already-working browser tab's pixels instead of asking
-OBS's internal browser to access your camera itself.
+fails to get camera access), then in OBS: **Sources → + → Window Capture** →
+select that browser window → crop to just the output video → Start Virtual
+Camera. This captures the already-working browser tab's pixels instead of
+asking OBS's internal browser to access your camera itself.
 
 **Watermark**: there's no code/SDK flag for this — check
 [platform.decart.ai/watermark](https://platform.decart.ai/watermark) in

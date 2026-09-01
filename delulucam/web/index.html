@@ -170,6 +170,19 @@
 
     <button class="btn btn-secondary" id="updateBtn" style="margin-top:4px;" disabled>Apply changes live</button>
     <div class="hint" style="margin-top:6px;">Edit the prompt or upload a new reference image anytime, then hit this to push the update without reconnecting.</div>
+
+    <div class="field" style="margin-top:20px; padding-top:16px; border-top:1px solid var(--border);">
+      <label>Virtual camera</label>
+      <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer;">
+        <input type="checkbox" id="vcamToggle" style="width:auto;" disabled />
+        Feed output to a system virtual camera
+      </label>
+      <div class="hint" id="vcamHint">
+        Run <code>python3 delulucam/web/vcam_bridge.py</code> alongside this page, then check
+        this box once connected. Any app (Zoom, Meet, Discord, OBS…) can then pick the
+        resulting camera directly — no OBS Window Capture needed.
+      </div>
+    </div>
   </div>
 
   <div class="main">
@@ -213,6 +226,7 @@ const els = {
   outputVideo: $("outputVideo"), localVideo: $("localVideo"), pip: $("pip"),
   placeholder: $("placeholder"), errorBox: $("errorBox"), metricText: $("metricText"),
   obsNote: $("obsNote"),
+  vcamToggle: $("vcamToggle"), vcamHint: $("vcamHint"),
 };
 
 let client = null;
@@ -220,6 +234,90 @@ let realtimeClient = null;
 let localStream = null;
 let refImageFile = null;
 let genSecondsThisSession = 0;
+
+// --- virtual-camera bridge: draw the output video to a hidden canvas and
+// stream JPEG frames to the local Python sink over a WebSocket. Kept
+// separate from the Decart connection so toggling it on/off is instant and
+// never touches the realtime session. ---
+const VCAM_WS_URL = "ws://localhost:8421";
+let vcamSocket = null;
+let vcamCanvas = null;
+let vcamCtx = null;
+let vcamFrameHandle = null;
+
+function vcamCaptureLoop() {
+  if (!vcamSocket || vcamSocket.readyState !== WebSocket.OPEN) return;
+  const video = els.outputVideo;
+  if (video.videoWidth > 0) {
+    if (!vcamCanvas) {
+      vcamCanvas = document.createElement("canvas");
+      vcamCtx = vcamCanvas.getContext("2d", { willReadFrequently: false });
+    }
+    if (vcamCanvas.width !== video.videoWidth || vcamCanvas.height !== video.videoHeight) {
+      vcamCanvas.width = video.videoWidth;
+      vcamCanvas.height = video.videoHeight;
+    }
+    vcamCtx.drawImage(video, 0, 0, vcamCanvas.width, vcamCanvas.height);
+    vcamCanvas.toBlob(
+      (blob) => {
+        if (blob && vcamSocket && vcamSocket.readyState === WebSocket.OPEN) {
+          blob.arrayBuffer().then((buf) => {
+            if (vcamSocket && vcamSocket.readyState === WebSocket.OPEN) vcamSocket.send(buf);
+          });
+        }
+      },
+      "image/jpeg",
+      0.85
+    );
+  }
+  // requestVideoFrameCallback paces capture to the video's actual frame
+  // rate (more accurate than requestAnimationFrame for a <video> element);
+  // fall back to rAF on browsers that don't support it (older Safari).
+  if (video.requestVideoFrameCallback) {
+    vcamFrameHandle = video.requestVideoFrameCallback(vcamCaptureLoop);
+  } else {
+    vcamFrameHandle = requestAnimationFrame(vcamCaptureLoop);
+  }
+}
+
+function stopVcamCapture() {
+  if (vcamFrameHandle != null) {
+    if (els.outputVideo.cancelVideoFrameCallback) els.outputVideo.cancelVideoFrameCallback(vcamFrameHandle);
+    else cancelAnimationFrame(vcamFrameHandle);
+    vcamFrameHandle = null;
+  }
+}
+
+els.vcamToggle.addEventListener("change", () => {
+  if (els.vcamToggle.checked) {
+    els.vcamHint.textContent = "Connecting to the local virtual-camera bridge…";
+    vcamSocket = new WebSocket(VCAM_WS_URL);
+    vcamSocket.binaryType = "arraybuffer";
+    vcamSocket.addEventListener("open", () => {
+      els.vcamHint.innerHTML = '<span style="color:var(--ok)">● Feeding virtual camera</span> — select it in your other apps now.';
+      vcamCaptureLoop();
+    });
+    vcamSocket.addEventListener("close", () => {
+      stopVcamCapture();
+      if (els.vcamToggle.checked) {
+        els.vcamHint.innerHTML =
+          '<span style="color:var(--err)">Bridge disconnected.</span> Is <code>python3 delulucam/web/vcam_bridge.py</code> running? Retrying…';
+        els.vcamToggle.checked = false;
+      }
+    });
+    vcamSocket.addEventListener("error", () => {
+      els.vcamHint.innerHTML =
+        '<span style="color:var(--err)">Could not reach the bridge.</span> Run <code>python3 delulucam/web/vcam_bridge.py</code> alongside this page, then try again.';
+    });
+  } else {
+    stopVcamCapture();
+    if (vcamSocket) { vcamSocket.close(); vcamSocket = null; }
+    els.vcamHint.innerHTML =
+      'Run <code>python3 delulucam/web/vcam_bridge.py</code> alongside this page, then check ' +
+      "this box once connected. Any app (Zoom, Meet, Discord, OBS…) can then pick the " +
+      "resulting camera directly — no OBS Window Capture needed.";
+  }
+});
 
 // --- persisted preferences (never the API key value itself in plaintext logs, just localStorage) ---
 try {
@@ -341,6 +439,7 @@ els.startBtn.addEventListener("click", async () => {
     els.startBtn.style.display = "none";
     els.stopBtn.style.display = "block";
     els.updateBtn.disabled = false;
+    els.vcamToggle.disabled = false;
   } catch (err) {
     console.error(err);
     showError(err.message || String(err));
@@ -366,6 +465,10 @@ els.updateBtn.addEventListener("click", async () => {
 els.stopBtn.addEventListener("click", async () => {
   if (realtimeClient) { await realtimeClient.disconnect(); realtimeClient = null; }
   if (localStream) { localStream.getTracks().forEach((t) => t.stop()); localStream = null; }
+  stopVcamCapture();
+  if (vcamSocket) { vcamSocket.close(); vcamSocket = null; }
+  els.vcamToggle.checked = false;
+  els.vcamToggle.disabled = true;
   els.outputVideo.style.display = "none";
   els.outputVideo.srcObject = null;
   els.pip.style.display = "none";
