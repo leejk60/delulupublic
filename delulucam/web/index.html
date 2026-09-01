@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>delulucam — cloud avatar</title>
+<style>
+  :root {
+    --bg: #0b0b0f;
+    --panel: #15151b;
+    --panel-2: #1c1c24;
+    --border: #2a2a34;
+    --text: #e8e8ec;
+    --muted: #8b8b96;
+    --accent: #6c5ce7;
+    --accent-2: #8b7cf0;
+    --ok: #34d399;
+    --err: #f87171;
+    --warn: #fbbf24;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .app { display: flex; height: 100vh; }
+
+  .sidebar {
+    width: 340px; flex-shrink: 0; background: var(--panel);
+    border-right: 1px solid var(--border); padding: 20px; overflow-y: auto;
+  }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; margin-bottom: 20px; }
+  .brand .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+  .brand small { color: var(--muted); font-weight: 400; }
+
+  .field { margin-bottom: 18px; }
+  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .field .hint { font-size: 11px; color: var(--muted); margin-top: 5px; line-height: 1.4; }
+
+  input[type="text"], input[type="password"], textarea, select {
+    width: 100%; background: var(--panel-2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 8px; padding: 9px 10px; font-size: 13px;
+    font-family: inherit; resize: vertical;
+  }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
+  textarea { min-height: 70px; }
+
+  .ref-upload {
+    border: 1.5px dashed var(--border); border-radius: 10px; padding: 12px;
+    display: flex; align-items: center; gap: 12px; cursor: pointer; background: var(--panel-2);
+  }
+  .ref-upload:hover { border-color: var(--accent); }
+  .ref-thumb {
+    width: 52px; height: 52px; border-radius: 8px; background: #000 center/cover no-repeat;
+    flex-shrink: 0; border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 10px;
+  }
+  .ref-upload input[type="file"] { display: none; }
+  .ref-text { font-size: 12px; color: var(--muted); }
+  .ref-text strong { color: var(--text); display: block; font-size: 13px; margin-bottom: 2px; }
+
+  .btn {
+    width: 100%; padding: 11px; border-radius: 8px; border: none; font-size: 14px;
+    font-weight: 600; cursor: pointer; transition: opacity 0.15s;
+  }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn:not(:disabled):hover { opacity: 0.9; }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-danger { background: #3a1d1d; color: var(--err); border: 1px solid #5a2a2a; }
+  .btn-secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+
+  .status-row { display: flex; align-items: center; gap: 8px; font-size: 12px; margin: 14px 0; padding: 10px 12px; border-radius: 8px; background: var(--panel-2); }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+  .status-dot.connecting { background: var(--warn); animation: pulse 1s infinite; }
+  .status-dot.connected { background: var(--ok); }
+  .status-dot.error { background: var(--err); }
+  @keyframes pulse { 50% { opacity: 0.3; } }
+
+  .error-box {
+    background: #2a1414; border: 1px solid #4a1e1e; color: #ffb4b4;
+    border-radius: 8px; padding: 10px 12px; font-size: 12px; margin-bottom: 14px; display: none; line-height: 1.4;
+  }
+
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .topbar {
+    height: 52px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 20px; border-bottom: 1px solid var(--border); font-size: 13px; color: var(--muted);
+  }
+  .topbar .metric { color: var(--text); font-weight: 600; }
+
+  .stage {
+    flex: 1; display: flex; align-items: center; justify-content: center; position: relative;
+    background: radial-gradient(ellipse at center, #14141a 0%, #0b0b0f 100%);
+  }
+  #outputVideo {
+    max-width: 100%; max-height: 100%; border-radius: 10px; background: #000;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  .stage-placeholder { text-align: center; color: var(--muted); font-size: 14px; }
+  .stage-placeholder .big { font-size: 15px; color: var(--text); margin-bottom: 6px; }
+
+  .pip {
+    position: absolute; bottom: 20px; right: 20px; width: 160px; border-radius: 8px;
+    overflow: hidden; border: 2px solid var(--border); background: #000; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+  .pip video { width: 100%; display: block; }
+  .pip-label { position: absolute; top: 4px; left: 6px; font-size: 10px; background: rgba(0,0,0,0.6); padding: 2px 6px; border-radius: 4px; }
+
+  .obs-note {
+    position: absolute; top: 16px; left: 16px; right: 16px; max-width: 480px;
+    background: rgba(21,21,27,0.9); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; font-size: 11px; color: var(--muted); line-height: 1.5; display: none;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="sidebar">
+    <div class="brand"><span class="dot"></span> delulucam <small>cloud avatar</small></div>
+
+    <div class="error-box" id="errorBox"></div>
+
+    <div class="field">
+      <label>Decart API key</label>
+      <input type="password" id="apiKey" placeholder="dk_..." autocomplete="off" />
+      <div class="hint">Stored only in this browser's local storage — never sent anywhere but Decart's API.</div>
+    </div>
+
+    <div class="field">
+      <label>Model</label>
+      <select id="modelSelect">
+        <option value="lucy-2.5">Lucy 2.5 (character reference)</option>
+        <option value="lucy-2.1">Lucy 2.1 (character reference)</option>
+        <option value="lucy-restyle-2">Lucy Restyle Live (style reference)</option>
+        <option value="lucy-vton-3">Lucy VTON 3 (outfit reference)</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Reference image</label>
+      <label class="ref-upload" id="refUploadLabel">
+        <div class="ref-thumb" id="refThumb">none</div>
+        <div class="ref-text">
+          <strong id="refFileName">Click to upload</strong>
+          <span>Character sheet portrait, head &amp; shoulders, JPEG/PNG/WebP</span>
+        </div>
+        <input type="file" id="refFile" accept="image/jpeg,image/png,image/webp" />
+      </label>
+    </div>
+
+    <div class="field">
+      <label>Prompt</label>
+      <textarea id="promptInput">Transform into this character</textarea>
+      <div class="hint">Combined with the reference image — use this to add details the photo doesn't capture (outfit, mood, lighting).</div>
+    </div>
+
+    <div class="field">
+      <label>Camera (your OBSBOT)</label>
+      <select id="cameraSelect"><option>Click "Start" to list cameras…</option></select>
+    </div>
+
+    <button class="btn btn-primary" id="startBtn">Start</button>
+    <button class="btn btn-danger" id="stopBtn" style="display:none; margin-top:8px;">Disconnect</button>
+
+    <div class="status-row">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="statusText">Not connected</span>
+    </div>
+
+    <button class="btn btn-secondary" id="updateBtn" style="margin-top:4px;" disabled>Apply changes live</button>
+    <div class="hint" style="margin-top:6px;">Edit the prompt or upload a new reference image anytime, then hit this to push the update without reconnecting.</div>
+  </div>
+
+  <div class="main">
+    <div class="topbar">
+      <span>delulucam · cloud avatar preview</span>
+      <span id="metricText"></span>
+    </div>
+    <div class="stage">
+      <div class="stage-placeholder" id="placeholder">
+        <div class="big">Add your API key, upload a reference image, and press Start</div>
+        <div>Your transformed feed will appear here — point OBS's Browser Source at this page to send it to your virtual camera.</div>
+      </div>
+      <video id="outputVideo" autoplay playsinline style="display:none;"></video>
+      <div class="pip" id="pip" style="display:none;">
+        <div class="pip-label">you</div>
+        <video id="localVideo" autoplay playsinline muted></video>
+      </div>
+      <div class="obs-note" id="obsNote">
+        <strong style="color:var(--text)">Feeding this to your virtual camera:</strong><br/>
+        In OBS: Sources → + → Browser Source → check "Local file" → point it at this page's URL
+        (serve it with <code>python3 -m http.server</code> from this folder and use
+        <code>http://localhost:8000</code> — plain <code>file://</code> often blocks camera access).
+        Size the source to the output resolution, then Start Virtual Camera in OBS.
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script type="module">
+import { createDecartClient, models } from "https://esm.sh/@decartai/sdk@0.1.22";
+
+const $ = (id) => document.getElementById(id);
+const els = {
+  apiKey: $("apiKey"), modelSelect: $("modelSelect"),
+  refFile: $("refFile"), refThumb: $("refThumb"), refFileName: $("refFileName"), refUploadLabel: $("refUploadLabel"),
+  promptInput: $("promptInput"), cameraSelect: $("cameraSelect"),
+  startBtn: $("startBtn"), stopBtn: $("stopBtn"), updateBtn: $("updateBtn"),
+  statusDot: $("statusDot"), statusText: $("statusText"),
+  outputVideo: $("outputVideo"), localVideo: $("localVideo"), pip: $("pip"),
+  placeholder: $("placeholder"), errorBox: $("errorBox"), metricText: $("metricText"),
+  obsNote: $("obsNote"),
+};
+
+let client = null;
+let realtimeClient = null;
+let localStream = null;
+let refImageFile = null;
+let genSecondsThisSession = 0;
+
+// --- persisted preferences (never the API key value itself in plaintext logs, just localStorage) ---
+try {
+  const savedKey = localStorage.getItem("delulucam_decart_key");
+  if (savedKey) els.apiKey.value = savedKey;
+  const savedCam = localStorage.getItem("delulucam_camera_id");
+  if (savedCam) els.cameraSelect.dataset.preferred = savedCam;
+  const savedModel = localStorage.getItem("delulucam_model");
+  if (savedModel) els.modelSelect.value = savedModel;
+} catch (e) { /* localStorage unavailable — fine, just skip persistence */ }
+
+function showError(msg) {
+  els.errorBox.textContent = msg;
+  els.errorBox.style.display = "block";
+}
+function clearError() {
+  els.errorBox.style.display = "none";
+}
+function setStatus(state, text) {
+  els.statusDot.className = "status-dot " + state;
+  els.statusText.textContent = text;
+}
+
+els.refFile.addEventListener("change", () => {
+  const file = els.refFile.files[0];
+  if (!file) return;
+  refImageFile = file;
+  els.refFileName.textContent = file.name;
+  const url = URL.createObjectURL(file);
+  els.refThumb.style.backgroundImage = `url(${url})`;
+  els.refThumb.textContent = "";
+});
+
+async function populateCameras() {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const cams = devices.filter((d) => d.kind === "videoinput");
+  els.cameraSelect.innerHTML = "";
+  cams.forEach((cam, i) => {
+    const opt = document.createElement("option");
+    opt.value = cam.deviceId;
+    opt.textContent = cam.label || `Camera ${i + 1}`;
+    els.cameraSelect.appendChild(opt);
+  });
+  const preferred = els.cameraSelect.dataset.preferred;
+  if (preferred && cams.some((c) => c.deviceId === preferred)) {
+    els.cameraSelect.value = preferred;
+  }
+}
+
+els.startBtn.addEventListener("click", async () => {
+  clearError();
+  const apiKey = els.apiKey.value.trim();
+  if (!apiKey) { showError("Enter your Decart API key first."); return; }
+  if (!refImageFile) { showError("Upload a reference image first."); return; }
+
+  try { localStorage.setItem("delulucam_decart_key", apiKey); } catch (e) {}
+  try { localStorage.setItem("delulucam_model", els.modelSelect.value); } catch (e) {}
+
+  els.startBtn.disabled = true;
+  setStatus("connecting", "Requesting camera…");
+
+  try {
+    // Ask for a generic camera first so enumerateDevices() returns real labels
+    // (browsers hide device labels until permission is granted at least once).
+    const probe = await navigator.mediaDevices.getUserMedia({ video: true });
+    probe.getTracks().forEach((t) => t.stop());
+    await populateCameras();
+
+    const chosenCameraId = els.cameraSelect.value;
+    try { localStorage.setItem("delulucam_camera_id", chosenCameraId); } catch (e) {}
+
+    client = createDecartClient({ apiKey });
+    const model = models.realtime(els.modelSelect.value);
+
+    setStatus("connecting", "Opening camera stream…");
+    localStream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        deviceId: chosenCameraId ? { exact: chosenCameraId } : undefined,
+        frameRate: model.fps, width: model.width, height: model.height,
+      },
+    });
+    els.localVideo.srcObject = localStream;
+    els.pip.style.display = "block";
+
+    setStatus("connecting", "Connecting to Decart…");
+    realtimeClient = await client.realtime.connect(localStream, {
+      model,
+      onRemoteStream: (remoteStream) => {
+        els.outputVideo.srcObject = remoteStream;
+        els.outputVideo.style.display = "block";
+        els.placeholder.style.display = "none";
+        els.obsNote.style.display = "block";
+      },
+    });
+
+    realtimeClient.on("connection_change", (state) => {
+      if (state === "connected") setStatus("connected", "Connected");
+      else if (state === "generating") setStatus("connected", "Live");
+      else if (state === "reconnecting") setStatus("connecting", "Reconnecting…");
+      else if (state === "disconnected") setStatus("", "Disconnected");
+    });
+    realtimeClient.on("error", (err) => {
+      showError(err.message || String(err));
+      setStatus("error", "Error");
+    });
+    realtimeClient.on("generation_tick", (msg) => {
+      genSecondsThisSession = msg.seconds;
+      els.metricText.textContent = `${genSecondsThisSession}s generated this session`;
+    });
+
+    // Push the character reference + prompt now that the session is live.
+    await realtimeClient.set({
+      prompt: els.promptInput.value.trim() || undefined,
+      image: refImageFile,
+      enhance: true,
+    });
+
+    setStatus("connected", "Connected");
+    els.startBtn.style.display = "none";
+    els.stopBtn.style.display = "block";
+    els.updateBtn.disabled = false;
+  } catch (err) {
+    console.error(err);
+    showError(err.message || String(err));
+    setStatus("error", "Failed to connect");
+    els.startBtn.disabled = false;
+  }
+});
+
+els.updateBtn.addEventListener("click", async () => {
+  if (!realtimeClient) return;
+  clearError();
+  try {
+    await realtimeClient.set({
+      prompt: els.promptInput.value.trim() || undefined,
+      image: refImageFile || undefined,
+      enhance: true,
+    });
+  } catch (err) {
+    showError("Update failed: " + (err.message || String(err)));
+  }
+});
+
+els.stopBtn.addEventListener("click", async () => {
+  if (realtimeClient) { await realtimeClient.disconnect(); realtimeClient = null; }
+  if (localStream) { localStream.getTracks().forEach((t) => t.stop()); localStream = null; }
+  els.outputVideo.style.display = "none";
+  els.outputVideo.srcObject = null;
+  els.pip.style.display = "none";
+  els.placeholder.style.display = "block";
+  els.obsNote.style.display = "none";
+  els.startBtn.style.display = "block";
+  els.startBtn.disabled = false;
+  els.stopBtn.style.display = "none";
+  els.updateBtn.disabled = true;
+  setStatus("", "Not connected");
+  els.metricText.textContent = "";
+});
+</script>
+</body>
+</html>

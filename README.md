@@ -196,36 +196,55 @@ trade for running 100% locally with your feed never leaving the Mac. Model
 weights (LivePortrait, InsightFace) are released for non-commercial research
 use — check upstream licenses before monetised streaming.
 
-## Cloud avatar mode — rented GPU, lower latency (status: scaffold, not built)
+## Cloud avatar mode — Decart Lucy, real-time, hosted
 
 Local avatar mode's MLX engine has a real throughput ceiling on Apple
 Silicon today (SPADE generator cost dominates and isn't skippable — see the
-project history for how that was measured). The alternative: run the same
-LivePortrait architecture's TensorRT build on a rented NVIDIA GPU, where it's
-built for real-time, and stream frames to and from it.
+project history for how that was measured). An earlier plan here was to rent
+a GPU and self-host a TensorRT server for this; that's no longer necessary —
+[Decart](https://decart.ai)'s **Lucy** models do real-time character-reference
+transformation as a hosted API, confirmed working (including full-body, on
+`lucy-2.5`) against this project's own character sheet.
 
-This is **not implemented yet** — deliberately: getting a network protocol
-right by guessing, with no GPU to measure real latency against, tends to be
-wasted work. What exists now is the decided shape:
+`delulucam/web/` is a small local browser app — not a Python script, because
+Decart's most complete SDK is JavaScript, and running it in a browser avoids
+reimplementing WebRTC frame handling ourselves:
 
-- `server/realtime_server.py` + `server/Dockerfile` — a websocket server for
-  a rented GPU box, built on the maintained `shaoguo/faster_liveportrait:v3`
-  TensorRT image. One JPEG frame in, one animated JPEG frame back.
-- `delulucam/avatar_cloud.py` — the Mac-side client. Unlike `avatar.py`, it
-  needs no MLX/engine imports (just capture, network, virtual cam), so it
-  runs in delulucam's own venv rather than inside the `fasterliveportrait-mlx`
-  checkout.
+- Enter your [Decart API key](https://platform.decart.ai), pick a model
+  (`lucy-2.5`/`lucy-2.1` for character reference, `lucy-restyle-2` for style,
+  `lucy-vton-3` for outfit-only), upload a reference portrait from your
+  character sheet, write a prompt, and pick your OBSBOT as the camera.
+- The transformed stream renders live in the page. "Apply changes live"
+  pushes a new prompt or reference image into the running session without
+  reconnecting.
 
-To pick this up: rent a GPU (RunPod etc.), deploy `server/`, wire the
-send/recv loop in both files against real measured latency, done together
-since the wire protocol on both ends must match.
+Run it:
 
-Honest trade-offs versus local avatar mode: your webcam feed and character
-leave the Mac and go to a rented server every frame (no longer fully
-private), and it costs real, ongoing GPU-rental money for however long you
-stream (rough range: under a dollar per hour on budget GPU tiers). In
-exchange: TensorRT on real GPU hardware should comfortably clear real-time,
-which MLX does not yet for this model.
+```bash
+python3 delulucam/web/serve.py     # serves on http://localhost:8420 and opens it
+```
+
+(Plain `file://` often blocks camera access in the browser — serving over
+`localhost` sidesteps that.)
+
+**Feeding the output to your virtual camera**: in OBS, add a **Browser
+Source**, point it at the same `http://localhost:8420` URL, size it to the
+output resolution, then **Start Virtual Camera**. The page's output video
+element is what OBS is capturing — nothing else on the page needs to be
+visible to viewers.
+
+Honest trade-offs versus local avatar mode: your webcam feed and reference
+image go to Decart's servers every frame (no longer fully private), and
+generation is billed by the second while a session is active — check
+current pricing in their dashboard. Latency you actually feel also depends
+on your network round-trip to wherever they serve realtime sessions from,
+on top of their own sub-40ms model latency — worth checking directly if
+you're far from their infrastructure.
+
+**Character reference best practices** (from Decart's own docs): a clear,
+front-facing, well-lit, head-and-shoulders crop works far better than a
+full-body or occluded shot — reuse one of the close-up crops this project
+already produced from your character sheet, not the whole collage.
 
 ## OBSBOT tips
 
