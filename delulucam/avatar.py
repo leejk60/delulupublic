@@ -27,7 +27,7 @@ import time
 import cv2
 import numpy as np
 
-AVATAR_VERSION = "0.5.0"
+AVATAR_VERSION = "0.6.0"
 
 PROFILES = ("quality", "reference", "speed", "turbo", "ultra")
 
@@ -343,6 +343,23 @@ def main():
         raise SystemExit(f"LivePortrait found no usable face in {portrait_path}")
     portrait_bgr = cv2.cvtColor(pipe.src_imgs[0], cv2.COLOR_RGB2BGR)
 
+    # The engine SKIPS paste-back in realtime mode (out_org comes back as the
+    # untouched source image), so we composite the animated 512px face crop
+    # into the full portrait ourselves with the engine's own utility.
+    paste_data = None
+    if not args.no_paste_back:
+        from src.utils.crop import paste_back_numpy
+
+        face_info = pipe.src_infos[0]
+        if face_info and isinstance(face_info[0], (list, tuple)):
+            face_info = face_info[0]
+        mask_ori, m_c2o = face_info[-2], face_info[-1]
+        if mask_ori is not None and m_c2o is not None:
+            paste_data = (paste_back_numpy, mask_ori, m_c2o)
+        else:
+            print("[avatar] paste-back data unavailable — streaming the face "
+                  "crop instead of the full portrait")
+
     canvas = None
     if args.canvas.lower() != "none":
         cw, ch = (int(v) for v in args.canvas.lower().split("x"))
@@ -426,7 +443,14 @@ def main():
                 if out_crop is None:
                     out = idle  # no face in the driving frame: hold the still portrait
                 else:
-                    rgb = out_crop if args.no_paste_back else out_org
+                    if paste_data is not None:
+                        paste, mask_ori, m_c2o = paste_data
+                        rgb = np.asarray(
+                            paste(out_crop, m_c2o, pipe.src_imgs[0].copy(), mask_ori),
+                            dtype=np.uint8,
+                        )
+                    else:
+                        rgb = out_crop
                     bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
                     out = fit(bgr)
 
