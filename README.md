@@ -196,6 +196,37 @@ trade for running 100% locally with your feed never leaving the Mac. Model
 weights (LivePortrait, InsightFace) are released for non-commercial research
 use — check upstream licenses before monetised streaming.
 
+## Cloud avatar mode — rented GPU, lower latency (status: scaffold, not built)
+
+Local avatar mode's MLX engine has a real throughput ceiling on Apple
+Silicon today (SPADE generator cost dominates and isn't skippable — see the
+project history for how that was measured). The alternative: run the same
+LivePortrait architecture's TensorRT build on a rented NVIDIA GPU, where it's
+built for real-time, and stream frames to and from it.
+
+This is **not implemented yet** — deliberately: getting a network protocol
+right by guessing, with no GPU to measure real latency against, tends to be
+wasted work. What exists now is the decided shape:
+
+- `server/realtime_server.py` + `server/Dockerfile` — a websocket server for
+  a rented GPU box, built on the maintained `shaoguo/faster_liveportrait:v3`
+  TensorRT image. One JPEG frame in, one animated JPEG frame back.
+- `delulucam/avatar_cloud.py` — the Mac-side client. Unlike `avatar.py`, it
+  needs no MLX/engine imports (just capture, network, virtual cam), so it
+  runs in delulucam's own venv rather than inside the `fasterliveportrait-mlx`
+  checkout.
+
+To pick this up: rent a GPU (RunPod etc.), deploy `server/`, wire the
+send/recv loop in both files against real measured latency, done together
+since the wire protocol on both ends must match.
+
+Honest trade-offs versus local avatar mode: your webcam feed and character
+leave the Mac and go to a rented server every frame (no longer fully
+private), and it costs real, ongoing GPU-rental money for however long you
+stream (rough range: under a dollar per hour on budget GPU tiers). In
+exchange: TensorRT on real GPU hardware should comfortably clear real-time,
+which MLX does not yet for this model.
+
 ## OBSBOT tips
 
 OBSBOT cameras show up as normal UVC webcams — find yours with
