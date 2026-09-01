@@ -189,10 +189,11 @@
       </div>
       <div class="obs-note" id="obsNote">
         <strong style="color:var(--text)">Feeding this to your virtual camera:</strong><br/>
-        In OBS: Sources → + → Browser Source → check "Local file" → point it at this page's URL
-        (serve it with <code>python3 -m http.server</code> from this folder and use
-        <code>http://localhost:8000</code> — plain <code>file://</code> often blocks camera access).
-        Size the source to the output resolution, then Start Virtual Camera in OBS.
+        Don't use OBS's Browser Source for this page — OBS's embedded browser
+        has its own permissions and reliably fails to get camera access.
+        Instead, in OBS: Sources → + → <strong>Window Capture</strong> → select
+        this browser window/tab → crop to just this video. Then Start Virtual
+        Camera in OBS.
       </div>
     </div>
   </div>

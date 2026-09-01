@@ -227,11 +227,26 @@ python3 delulucam/web/serve.py     # serves on http://localhost:8420 and opens i
 (Plain `file://` often blocks camera access in the browser — serving over
 `localhost` sidesteps that.)
 
-**Feeding the output to your virtual camera**: in OBS, add a **Browser
-Source**, point it at the same `http://localhost:8420` URL, size it to the
-output resolution, then **Start Virtual Camera**. The page's output video
-element is what OBS is capturing — nothing else on the page needs to be
-visible to viewers.
+**Feeding the output to your virtual camera**: run the page in your normal
+browser (Safari/Chrome), **not** inside OBS's Browser Source — OBS's Browser
+Source runs its own embedded browser with separate permissions and reliably
+fails to get camera access, since it needs special launch flags that are
+finicky and version-dependent even when they work at all. Instead:
+
+1. Open `http://localhost:8420` in your regular browser and get it connected.
+2. In OBS: **Sources → + → Window Capture** (not Browser Source) → select
+   that browser window.
+3. Crop the source to just the output video area (OBS's crop handles, or a
+   filter) so the sidebar/controls aren't visible to viewers.
+4. **Start Virtual Camera**.
+
+This captures the already-working browser tab's pixels instead of asking
+OBS's internal browser to access your camera itself.
+
+**Watermark**: there's no code/SDK flag for this — check
+[platform.decart.ai/watermark](https://platform.decart.ai/watermark) in
+your Decart account; it's an account-level setting on their platform, not
+something this app controls.
 
 Honest trade-offs versus local avatar mode: your webcam feed and reference
 image go to Decart's servers every frame (no longer fully private), and
