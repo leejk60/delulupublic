@@ -6,4 +6,5 @@ opencv-python>=4.8
 insightface==0.7.3
 onnxruntime>=1.16
 pyvirtualcam>=0.11
-websockets>=12.0    # delulucam/web/vcam_bridge.py
+# for delulucam/web/vcam_bridge.py
+websockets>=12.0
