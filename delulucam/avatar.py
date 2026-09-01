@@ -27,7 +27,7 @@ import time
 import cv2
 import numpy as np
 
-AVATAR_VERSION = "0.6.0"
+AVATAR_VERSION = "0.7.0"
 
 PROFILES = ("quality", "reference", "speed", "turbo", "ultra")
 
@@ -311,6 +311,12 @@ def main():
     print(f"[avatar] MLX profile: {args.profile} "
           f"(warp interval={os.environ.get('FLP_MLX_TEMPORAL_WARP_INTERVAL')}, "
           f"threshold={os.environ.get('FLP_MLX_TEMPORAL_WARP_THRESHOLD')})")
+    try:
+        import mlx.core as mx
+
+        print(f"[avatar] MLX device: {mx.default_device()}")
+    except Exception as e:  # pragma: no cover - diagnostic only
+        print(f"[avatar] MLX device check failed: {e}")
 
     from omegaconf import OmegaConf
 
@@ -418,9 +424,16 @@ def main():
     first, mirror, in_character, face_seen = True, args.mirror, True, True
     show_driver = True  # 'd' hides the driver picture-in-picture (preview only)
     times = []
+    stages = ("read", "engine", "paste", "compose", "vcam", "ui")
+    stats = dict.fromkeys(stages, 0.0)
+    stat_frames = 0
+    loop_dts = []
+    t_loop = time.perf_counter()
     try:
         while True:
+            t_s = time.perf_counter()
             ok, frame = cap.read()
+            stats["read"] += time.perf_counter() - t_s
             if not ok or frame is None:
                 print("[avatar] camera stopped delivering frames")
                 break
@@ -437,12 +450,15 @@ def main():
                     first_frame=first, realtime=True,
                 )
                 first = False
-                times.append(time.perf_counter() - t0)
+                dt = time.perf_counter() - t0
+                times.append(dt)
+                stats["engine"] += dt
 
                 face_seen = out_crop is not None
                 if out_crop is None:
                     out = idle  # no face in the driving frame: hold the still portrait
                 else:
+                    t_s = time.perf_counter()
                     if paste_data is not None:
                         paste, mask_ori, m_c2o = paste_data
                         rgb = np.asarray(
@@ -451,13 +467,32 @@ def main():
                         )
                     else:
                         rgb = out_crop
+                    stats["paste"] += time.perf_counter() - t_s
+                    t_s = time.perf_counter()
                     bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
                     out = fit(bgr)
+                    stats["compose"] += time.perf_counter() - t_s
 
             if vcam is not None:
+                t_s = time.perf_counter()
                 vcam.send(out)
                 vcam.sleep_until_next_frame()
+                stats["vcam"] += time.perf_counter() - t_s
+
+            now = time.perf_counter()
+            loop_dts.append(now - t_loop)
+            t_loop = now
+            stat_frames += 1
+            if stat_frames % 60 == 0:
+                loop_fps = 1.0 / max(1e-6, float(np.mean(loop_dts[-60:])))
+                parts = " | ".join(
+                    f"{k} {1000 * stats[k] / 60:.0f}ms" for k in stages
+                )
+                print(f"[avatar] timing/frame over last 60: {parts} -> {loop_fps:.1f} fps")
+                stats = dict.fromkeys(stages, 0.0)
+
             if not args.no_preview:
+                t_s = time.perf_counter()
                 hud = out.copy()
                 if show_driver:
                     # picture-in-picture of what the driving camera sees, so a
@@ -483,11 +518,12 @@ def main():
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 4)
                     cv2.putText(hud, msg, (12, hud.shape[0] - 16),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (60, 60, 230), 2)
-                if times:
-                    fps_now = 1.0 / max(1e-6, float(np.mean(times[-30:])))
-                    cv2.putText(hud, f"{fps_now:4.1f} fps", (12, 28),
+                if times and loop_dts:
+                    label = (f"{1.0 / max(1e-6, float(np.mean(loop_dts[-30:]))):4.1f} fps"
+                             f"  (engine {1000 * float(np.mean(times[-30:])):.0f} ms)")
+                    cv2.putText(hud, label, (12, 28),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 4)
-                    cv2.putText(hud, f"{fps_now:4.1f} fps", (12, 28),
+                    cv2.putText(hud, label, (12, 28),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (80, 220, 120), 2)
                 cv2.imshow(
                     "delulucam avatar (q quit / s in-out of character / "
@@ -505,6 +541,7 @@ def main():
                     mirror = not mirror
                 elif key == ord("d"):
                     show_driver = not show_driver
+                stats["ui"] += time.perf_counter() - t_s
     except KeyboardInterrupt:
         pass
     finally:
