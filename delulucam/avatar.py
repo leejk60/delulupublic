@@ -27,6 +27,8 @@ import time
 import cv2
 import numpy as np
 
+AVATAR_VERSION = "0.4.0"
+
 PROFILES = ("quality", "reference", "speed", "turbo", "ultra")
 
 
@@ -305,7 +307,10 @@ def main():
     from src.utils.mlx_profiles import apply_mlx_profile
 
     apply_mlx_profile(args.profile)
-    print(f"[avatar] MLX profile: {args.profile}")
+    print(f"[avatar] delulucam avatar v{AVATAR_VERSION}")
+    print(f"[avatar] MLX profile: {args.profile} "
+          f"(warp interval={os.environ.get('FLP_MLX_TEMPORAL_WARP_INTERVAL')}, "
+          f"threshold={os.environ.get('FLP_MLX_TEMPORAL_WARP_THRESHOLD')})")
 
     from omegaconf import OmegaConf
 
@@ -384,6 +389,7 @@ def main():
           "s to drop out of character (real camera), m to mirror, q to quit")
 
     first, mirror, in_character, face_seen = True, args.mirror, True, True
+    show_driver = True  # 'd' hides the driver picture-in-picture (preview only)
     times = []
     try:
         while True:
@@ -419,6 +425,23 @@ def main():
                 vcam.sleep_until_next_frame()
             if not args.no_preview:
                 hud = out.copy()
+                if show_driver:
+                    # picture-in-picture of what the driving camera sees, so a
+                    # wrong -c index or a camera pointed elsewhere is obvious
+                    dh, dw = frame.shape[:2]
+                    tw = max(64, hud.shape[1] // 5)
+                    th = max(36, int(tw * dh / max(1, dw)))
+                    if th < hud.shape[0] - 8 and tw < hud.shape[1] - 8:
+                        x0, y0 = hud.shape[1] - tw - 8, hud.shape[0] - th - 8
+                        hud[y0 : y0 + th, x0 : x0 + tw] = cv2.resize(frame, (tw, th))
+                        color = (80, 220, 120) if face_seen else (60, 60, 230)
+                        cv2.rectangle(hud, (x0, y0), (x0 + tw, y0 + th), color, 2)
+                        label = (f"driver cam {args.camera}: "
+                                 f"{'tracking' if face_seen else 'NO FACE'}")
+                        cv2.putText(hud, label, (x0, y0 - 8),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 3)
+                        cv2.putText(hud, label, (x0, y0 - 8),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
                 if in_character and not face_seen:
                     msg = (f"no face seen by camera {args.camera} - wrong camera? "
                            f"try --list-cameras")
@@ -446,6 +469,8 @@ def main():
                     print("[avatar] recalibrated rest pose")
                 elif key == ord("m"):
                     mirror = not mirror
+                elif key == ord("d"):
+                    show_driver = not show_driver
     except KeyboardInterrupt:
         pass
     finally:
