@@ -76,18 +76,26 @@ def _seams(gray: np.ndarray, axis: int, min_score: float = 0.2, min_sep: int = 4
     return [int(s[0]) + 1 for s in seams]
 
 
-def find_tile(gray: np.ndarray, fx: float, fy: float):
-    """Bounds of the collage tile containing point (fx, fy). Vertical seams are
-    detected across the whole sheet, horizontal seams only within the point's
-    column, so uneven grids work. A plain portrait yields the whole image."""
+def find_tile(gray: np.ndarray, box, inset: float):
+    """Bounds of the collage tile containing the face at `box`. Vertical seams
+    are detected across the whole sheet, horizontal seams only within the
+    face's column, so uneven grids work. A seam cutting through the face box
+    interior is a content edge, not a tile boundary — no collage splits a face
+    across tiles — so it is ignored; a seam just outside the box (e.g. right
+    under the chin) is a legitimate tile edge and kept. A plain portrait
+    yields the whole image."""
     h, w = gray.shape
-    vxs = [0] + _seams(gray, axis=1) + [w]
-    x1 = max(v for v in vxs if v <= fx)
-    x2 = min(v for v in vxs if v > fx)
-    hys = [0] + _seams(gray[:, x1:x2], axis=0) + [h]
-    y1 = max(v for v in hys if v <= fy)
-    y2 = min(v for v in hys if v > fy)
-    return x1, y1, x2, y2
+    x1, y1, x2, y2 = box
+    fx, fy = (x1 + x2) / 2, (y1 + y2) / 2
+    vxs = [0] + [s for s in _seams(gray, axis=1) if not (x1 + inset < s < x2 - inset)] + [w]
+    tx1 = max(v for v in vxs if v <= fx)
+    tx2 = min(v for v in vxs if v > fx)
+    hys = [0] + [
+        s for s in _seams(gray[:, tx1:tx2], axis=0) if not (y1 + inset < s < y2 - inset)
+    ] + [h]
+    ty1 = max(v for v in hys if v <= fy)
+    ty2 = min(v for v in hys if v > fy)
+    return tx1, ty1, tx2, ty2
 
 
 def write_portrait(img: np.ndarray, out_dir: str, max_dim: int) -> str:
@@ -167,7 +175,7 @@ def prepare_portrait(img_path: str, pipe, view: int, margins, out_dir: str,
     for lmk in faces:
         box = lmk_bbox(lmk)
         fh = box[3] - box[1]
-        tile = find_tile(gray, (box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
+        tile = find_tile(gray, box, inset=0.05 * fh)
         # Bust-portrait framing: the face should be a substantial but not
         # overwhelming part of its tile — rules out full-body tiles (face is a
         # sliver) and detail crops (face overflows the tile).
@@ -195,6 +203,7 @@ def prepare_portrait(img_path: str, pipe, view: int, margins, out_dir: str,
         f"{crop.shape[1]}x{crop.shape[0]} -> {out}"
     )
     print(
+        f"[avatar] check the framing:  open {out}\n"
         "[avatar] wrong view or framing? try --view 1/2/..., tune --margins, "
         "or pass a dedicated portrait image"
     )
@@ -290,17 +299,22 @@ def main():
     sys.path.insert(0, flp)
     print(f"[avatar] engine: {flp}")
 
+    # The profile's MLX tuning flags are env vars read AT IMPORT TIME by the
+    # engine's modules — apply them before anything from src.* is imported,
+    # or the profile silently has no effect.
+    from src.utils.mlx_profiles import apply_mlx_profile
+
+    apply_mlx_profile(args.profile)
+    print(f"[avatar] MLX profile: {args.profile}")
+
     from omegaconf import OmegaConf
 
     from src.pipelines.faster_live_portrait_pipeline import FasterLivePortraitPipeline
     from src.runtime_assets import ensure_runtime_assets
-    from src.utils.mlx_profiles import apply_mlx_profile
 
     cfg = OmegaConf.load(os.path.join(flp, "configs", "mlx_infer.yaml"))
     ensure_runtime_assets(cfg)  # downloads MLX weights from Hugging Face once
     cfg.infer_params.flag_pasteback = not args.no_paste_back
-    apply_mlx_profile(args.profile)
-    print(f"[avatar] MLX profile: {args.profile}")
 
     pipe = FasterLivePortraitPipeline(cfg=cfg, is_animal=False)
 
@@ -337,6 +351,9 @@ def main():
     cap = cv2.VideoCapture(args.camera)
     if not cap.isOpened():
         raise SystemExit(f"could not open camera {args.camera}")
+    # 720p is plenty for driving-motion capture and cheaper than 1080p+.
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
     vcam = None
     if not args.no_vcam:
