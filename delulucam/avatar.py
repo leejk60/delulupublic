@@ -106,15 +106,39 @@ def write_portrait(img: np.ndarray, out_dir: str, max_dim: int) -> str:
     return out
 
 
+def mac_camera_names():
+    """Camera names via system_profiler; AVFoundation (and therefore OpenCV)
+    indices normally follow this order."""
+    if sys.platform != "darwin":
+        return []
+    import json
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["system_profiler", "SPCameraDataType", "-json"],
+            capture_output=True, text=True, timeout=20,
+        )
+        return [c.get("_name", "?") for c in json.loads(out.stdout).get("SPCameraDataType", [])]
+    except Exception:
+        return []
+
+
 def list_cameras(max_index: int = 10):
+    names = mac_camera_names()
     found = []
     for i in range(max_index):
         cap = cv2.VideoCapture(i)
+        opened = False
         if cap.isOpened():
             ok, frame = cap.read()
             if ok and frame is not None:
-                found.append((i, f"{frame.shape[1]}x{frame.shape[0]}"))
+                opened = True
+                name = names[i] if i < len(names) else ""
+                found.append((i, f"{frame.shape[1]}x{frame.shape[0]}", name))
         cap.release()
+        if not opened and found:
+            break  # macOS camera indices are contiguous; stop at the first gap
     return found
 
 
@@ -247,8 +271,11 @@ def main():
         cams = list_cameras()
         if not cams:
             print("no working cameras found (indices 0-9)")
-        for idx, res in cams:
-            print(f"  camera {idx}: {res}")
+        for idx, res, name in cams:
+            print(f"  camera {idx}: {res}  {name}")
+        if any("OBS Virtual Camera" in c[2] for c in cams):
+            print("note: never pick OBS Virtual Camera as the input — that is "
+                  "this app's own OUTPUT (feedback loop); pick your real webcam")
         return
     if not args.character:
         raise SystemExit("give me a character sheet or portrait image "
