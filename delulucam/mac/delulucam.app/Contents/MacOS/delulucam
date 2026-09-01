@@ -1,0 +1,29 @@
+#!/bin/bash
+# delulucam launcher (inside the .app bundle).
+#
+# Opens a Terminal window running mac/run.sh, which lives right next to this
+# .app bundle in the repo — so path resolution here only needs to find that
+# sibling file, not guess at the repo's own layout (run.sh handles that
+# itself). This means the .app works wherever the repo is cloned, as long
+# as the .app stays inside delulucam/mac/ where git put it.
+
+set -e
+
+# Contents/MacOS/delulucam -> up 3 levels -> delulucam/mac/ (where run.sh lives).
+MACOS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MAC_DIR="$(cd "$MACOS_DIR/../../.." && pwd)"
+RUN_SH="$MAC_DIR/run.sh"
+
+if [ ! -f "$RUN_SH" ]; then
+  osascript -e "display alert \"delulucam\" message \"Couldn't find run.sh next to this app at $MAC_DIR. Did the delulucam.app get separated from the repo? Re-clone or git pull the repo and keep this app inside delulucam/mac/.\""
+  exit 1
+fi
+
+# Open a real Terminal window so the user can see startup logs and Ctrl-C
+# cleanly — a double-clicked .app has no attached terminal of its own.
+osascript <<OSA
+tell application "Terminal"
+  activate
+  do script "exec '$RUN_SH'"
+end tell
+OSA

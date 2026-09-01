@@ -218,14 +218,31 @@ reimplementing WebRTC frame handling ourselves:
   pushes a new prompt or reference image into the running session without
   reconnecting.
 
-Run it:
+Run it — either manually, two terminals:
 
 ```bash
-python3 delulucam/web/serve.py     # serves on http://localhost:8420 and opens it
+python3 delulucam/web/serve.py       # terminal 1: serves on http://localhost:8420 and opens it
+python3 delulucam/web/vcam_bridge.py # terminal 2: the virtual-camera bridge (needs the venv active)
 ```
 
 (Plain `file://` often blocks camera access in the browser — serving over
 `localhost` sidesteps that.)
+
+**Or with one double-click**, once you've done the manual run at least once
+(so `.venv` exists): `delulucam/mac/delulucam.app` starts both of the above
+together in a Terminal window, and stops both cleanly when you close it or
+hit Ctrl-C. To get an actual installable `.dmg` out of it, run this once
+**on your Mac** (it needs `hdiutil`, which only exists there — this can't be
+built from a Linux dev environment):
+
+```bash
+./delulucam/mac/build_dmg.sh    # writes delulucam-installer.dmg to the repo root
+```
+
+It isn't code-signed (that needs a paid Apple Developer account), so the
+first launch needs a right-click → Open past Gatekeeper's "unidentified
+developer" warning — a one-time approval, same as any indie/open-source Mac
+app without a paid cert. After that it opens normally.
 
 **Feeding the output to your virtual camera** — two ways:
 
