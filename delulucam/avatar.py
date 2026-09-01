@@ -90,7 +90,36 @@ def find_tile(gray: np.ndarray, fx: float, fy: float):
     return x1, y1, x2, y2
 
 
-def prepare_portrait(img_path: str, pipe, view: int, margins, out_dir: str) -> str:
+def write_portrait(img: np.ndarray, out_dir: str, max_dim: int) -> str:
+    """Save the source portrait, capped to max_dim pixels: the animated face
+    crop is 512px regardless, so a huge portrait only slows paste-back."""
+    h, w = img.shape[:2]
+    if max(h, w) > max_dim:
+        scale = max_dim / max(h, w)
+        img = cv2.resize(img, (int(w * scale), int(h * scale)),
+                         interpolation=cv2.INTER_AREA)
+        print(f"[avatar] portrait downscaled to {img.shape[1]}x{img.shape[0]} "
+              f"for speed (--portrait-size to change)")
+    os.makedirs(out_dir, exist_ok=True)
+    out = os.path.join(out_dir, "avatar_portrait.png")
+    cv2.imwrite(out, img)
+    return out
+
+
+def list_cameras(max_index: int = 10):
+    found = []
+    for i in range(max_index):
+        cap = cv2.VideoCapture(i)
+        if cap.isOpened():
+            ok, frame = cap.read()
+            if ok and frame is not None:
+                found.append((i, f"{frame.shape[1]}x{frame.shape[0]}"))
+        cap.release()
+    return found
+
+
+def prepare_portrait(img_path: str, pipe, view: int, margins, out_dir: str,
+                     max_dim: int) -> str:
     """Cut a portrait (hair + shoulders included) around one face of the sheet.
 
     A character sheet is usually a collage; LivePortrait wants one portrait.
@@ -135,9 +164,7 @@ def prepare_portrait(img_path: str, pipe, view: int, margins, out_dir: str) -> s
     cy2 = min(ty2, int(y2 + bottom * fh))
     crop = img[cy1:cy2, cx1:cx2]
 
-    os.makedirs(out_dir, exist_ok=True)
-    out = os.path.join(out_dir, "avatar_portrait.png")
-    cv2.imwrite(out, crop)
+    out = write_portrait(crop, out_dir, max_dim)
     print(
         f"[avatar] portrait: view {view} of {len(candidates)}, tile "
         f"({tx1},{ty1})-({tx2},{ty2}), face/tile ratio {ratio:.2f}, cropped "
@@ -182,9 +209,12 @@ def parse_args():
         "stream it as a virtual camera (full hair + outfit).",
         epilog="For your own characters/likeness only — do not impersonate real people.",
     )
-    p.add_argument("character", help="character sheet or portrait image")
+    p.add_argument("character", nargs="?", help="character sheet or portrait image")
     p.add_argument("--flp", default=None, help="path to the fasterliveportrait-mlx checkout")
     p.add_argument("-c", "--camera", type=int, default=0, help="driving camera index")
+    p.add_argument("--list-cameras", action="store_true",
+                   help="probe camera indices and exit (on a Mac mini, index 0 is "
+                   "often the iPhone Continuity Camera, not your webcam)")
     p.add_argument("--profile", choices=PROFILES, default="speed",
                    help="MLX speed/quality profile (default speed; try turbo if choppy)")
     p.add_argument("--view", type=int, default=0,
@@ -195,6 +225,9 @@ def parse_args():
                    "height: top,sides,bottom (default 1.0,0.9,2.6)")
     p.add_argument("--no-crop", action="store_true",
                    help="use the character image as-is (it is already a portrait)")
+    p.add_argument("--portrait-size", type=int, default=960,
+                   help="cap the source portrait's longest side in pixels — bigger "
+                   "is slower with no gain in face detail (default 960)")
     p.add_argument("--canvas", default="1280x720",
                    help="output size WxH, letterboxed with a blurred backdrop; "
                    "'none' streams the raw portrait size (default 1280x720)")
@@ -210,6 +243,16 @@ def parse_args():
 
 def main():
     args = parse_args()
+    if args.list_cameras:
+        cams = list_cameras()
+        if not cams:
+            print("no working cameras found (indices 0-9)")
+        for idx, res in cams:
+            print(f"  camera {idx}: {res}")
+        return
+    if not args.character:
+        raise SystemExit("give me a character sheet or portrait image "
+                         "(or --list-cameras to probe cameras)")
     if not (sys.platform == "darwin" and platform.machine() == "arm64"):
         print("[avatar] warning: MLX runs on Apple Silicon Macs; this is unlikely "
               "to work on this machine", file=sys.stderr)
@@ -234,15 +277,21 @@ def main():
 
     pipe = FasterLivePortraitPipeline(cfg=cfg, is_animal=False)
 
+    portraits_dir = os.path.join(os.path.expanduser("~"), ".delulucam", "portraits")
     if args.no_crop:
-        portrait_path = character
+        img = cv2.imread(character, cv2.IMREAD_COLOR)
+        if img is None:
+            raise SystemExit(f"could not read character image: {character}")
+        if max(img.shape[:2]) > args.portrait_size:
+            portrait_path = write_portrait(img, portraits_dir, args.portrait_size)
+        else:
+            portrait_path = character
     else:
         margins = tuple(float(v) for v in args.margins.split(","))
         if len(margins) != 3:
             raise SystemExit("--margins wants three numbers: top,sides,bottom")
         portrait_path = prepare_portrait(
-            character, pipe, args.view, margins,
-            os.path.join(os.path.expanduser("~"), ".delulucam", "portraits"),
+            character, pipe, args.view, margins, portraits_dir, args.portrait_size,
         )
     if not pipe.prepare_source(portrait_path, realtime=True):
         raise SystemExit(f"LivePortrait found no usable face in {portrait_path}")
@@ -290,7 +339,7 @@ def main():
           "first frame (that pose becomes 'rest'); press r to recalibrate, "
           "s to drop out of character (real camera), m to mirror, q to quit")
 
-    first, mirror, in_character = True, args.mirror, True
+    first, mirror, in_character, face_seen = True, args.mirror, True, True
     times = []
     try:
         while True:
@@ -313,6 +362,7 @@ def main():
                 first = False
                 times.append(time.perf_counter() - t0)
 
+                face_seen = out_crop is not None
                 if out_crop is None:
                     out = idle  # no face in the driving frame: hold the still portrait
                 else:
@@ -325,6 +375,13 @@ def main():
                 vcam.sleep_until_next_frame()
             if not args.no_preview:
                 hud = out.copy()
+                if in_character and not face_seen:
+                    msg = (f"no face seen by camera {args.camera} - wrong camera? "
+                           f"try --list-cameras")
+                    cv2.putText(hud, msg, (12, hud.shape[0] - 16),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 4)
+                    cv2.putText(hud, msg, (12, hud.shape[0] - 16),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (60, 60, 230), 2)
                 if times:
                     fps_now = 1.0 / max(1e-6, float(np.mean(times[-30:])))
                     cv2.putText(hud, f"{fps_now:4.1f} fps", (12, 28),
