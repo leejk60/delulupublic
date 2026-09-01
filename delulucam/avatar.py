@@ -27,7 +27,7 @@ import time
 import cv2
 import numpy as np
 
-AVATAR_VERSION = "0.4.0"
+AVATAR_VERSION = "0.5.0"
 
 PROFILES = ("quality", "reference", "speed", "turbo", "ultra")
 
@@ -359,6 +359,16 @@ def main():
     # 720p is plenty for driving-motion capture and cheaper than 1080p+.
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+
+    # Non-square camera input must be face-cropped before motion extraction —
+    # without this the engine squashes the whole 16:9 frame into its 256px
+    # motion input and extracts almost no motion (mirrors the engine's own
+    # maybe_enable_auto_driving_crop).
+    cam_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    cam_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    if cam_w > 0 and cam_h > 0 and cam_w != cam_h and not cfg.infer_params.flag_crop_driving_video:
+        cfg.infer_params.flag_crop_driving_video = True
+        print(f"[avatar] driving crop enabled for non-square camera input ({cam_w}x{cam_h})")
 
     vcam = None
     if not args.no_vcam:
